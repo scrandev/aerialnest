@@ -1,0 +1,134 @@
+/* 
+ * CSS Styles for Aerial Nest Frontend
+ * These styles create a clean, professional appearance
+ * and ensure good readability for your development work
+ */
+
+.App {
+  text-align: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #F8FAFA 0%, #F2F7F5 100%);
+}
+
+.App-header {
+  padding: 40px 20px;
+  color: #2D4A45;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.App-header h1 {
+  font-family: 'Georgia', serif;
+  font-size: 3rem;
+  margin-bottom: 10px;
+  color: #2D4A45;
+}
+
+.App-header p {
+  font-size: 1.2rem;
+  color: #4A6B61;
+  margin-bottom: 40px;
+}
+
+/* API Connection Section Styling */
+.api-connection-section {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  margin: 30px 0;
+  box-shadow: 0 4px 20px rgba(45, 74, 69, 0.1);
+  border: 2px solid #E8F0ED;
+}
+
+.api-connection-section h2 {
+  color: #2D4A45;
+  margin-bottom: 20px;
+}
+
+.status-display {
+  margin: 20px 0;
+  padding: 20px;
+  background: #F8FAFA;
+  border-radius: 8px;
+  border-left: 4px solid #4A6B61;
+}
+
+.api-response {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.api-response h3 {
+  color: #2D4A45;
+  margin-bottom: 10px;
+}
+
+.api-response pre {
+  background: #F0F7F5;
+  padding: 15px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  color: #2D4A45;
+  border: 1px solid #B8CFC7;
+}
+
+/* Button Styling */
+.test-button {
+  background: #4A6B61;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  margin: 20px 0;
+}
+
+.test-button:hover:not(:disabled) {
+  background: #3D5A51;
+}
+
+.test-button:disabled {
+  background: #A0AEC0;
+  cursor: not-allowed;
+}
+
+/* Next Steps Section */
+.next-steps {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  margin: 30px 0;
+  text-align: left;
+  box-shadow: 0 4px 20px rgba(45, 74, 69, 0.1);
+  border: 2px solid #E8F0ED;
+}
+
+.next-steps h3 {
+  color: #2D4A45;
+  margin-bottom: 15px;
+}
+
+.next-steps ul {
+  color: #4A6B61;
+  line-height: 1.6;
+}
+
+.next-steps li {
+  margin-bottom: 8px;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+  .App-header h1 {
+    font-size: 2rem;
+  }
+  
+  .api-connection-section,
+  .next-steps {
+    padding: 20px;
+    margin: 20px 10px;
+  }
+}
