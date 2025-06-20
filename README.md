@@ -29,5 +29,5 @@ aerialnest/
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/scrandev/aerialnest.git
+   git clone https://github.com/yourusername/aerialnest.git
    cd aerialnest
