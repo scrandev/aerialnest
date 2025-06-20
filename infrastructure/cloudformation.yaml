@@ -1,0 +1,443 @@
+# Aerial Nest - MVP CloudFormation Template
+# Minimal viable infrastructure for development and early testing
+AWSTemplateFormatVersion: 2010-09-09
+Description: MVP infrastructure for Aerial Nest - minimal setup for development
+
+Parameters:
+  DomainName:
+    Description: The domain name for the app (e.g., dev.aerialnest.com)
+    Type: String
+    Default: dev.aerialnest.com
+
+  CodeBucket:
+    Description: S3 bucket containing deployment packages
+    Type: String
+    Default: aerialnest-deployment-code
+
+  ApiLambdaCodeZipS3Key:
+    Description: Path to API Lambda code zip in CodeBucket
+    Type: String
+    Default: api/lambda-code.zip
+
+  ApiModulesLambdaLayerZipS3Key:
+    Description: Path to Lambda layer zip in CodeBucket
+    Type: String
+    Default: api/lambda-layer-node-modules.zip
+
+  DatabaseMasterUsername:
+    Description: Master username for RDS PostgreSQL
+    Type: String
+    Default: aerialnest
+    MinLength: 1
+    MaxLength: 63
+
+  DatabaseName:
+    Description: PostgreSQL database name
+    Type: String
+    Default: aerialnest_db
+
+Resources:
+
+  # ===============================
+  # SECRETS MANAGEMENT
+  # ===============================
+  
+  DatabasePasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}-db-password
+      Description: PostgreSQL master password for Aerial Nest
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DatabaseMasterUsername}"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  JWTSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}-jwt-secret
+      Description: JWT signing secret for Aerial Nest
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\'
+
+  # ===============================
+  # DATABASE (PostgreSQL) - Simple Setup
+  # ===============================
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for PostgreSQL database
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: Allow PostgreSQL access from Lambda functions
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: !Ref DatabaseSecurityGroup
+          Description: Allow outbound to PostgreSQL
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS outbound
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP outbound
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub ${AWS::StackName}-postgres
+      DBName: !Ref DatabaseName
+      DBInstanceClass: db.t3.micro  # Small instance for MVP
+      AllocatedStorage: 20          # Minimal storage
+      Engine: postgres
+      EngineVersion: '15.4'
+      MasterUsername: !Ref DatabaseMasterUsername
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DatabasePasswordSecret}:SecretString:password}}'
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      BackupRetentionPeriod: 7
+      StorageType: gp2
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-postgres
+        - Key: Environment
+          Value: MVP
+
+  # ===============================
+  # STORAGE BUCKETS - Basic Setup
+  # ===============================
+
+  WebContentS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-web-content-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  DocumentStorageS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-documents-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+
+  # ===============================
+  # SSL CERTIFICATE
+  # ===============================
+
+  SSLCert:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS  # Uses DNS validation instead of email
+      SubjectAlternativeNames:
+        - !Sub '*.${DomainName}'
+
+  # ===============================
+  # CLOUDFRONT - Basic Setup
+  # ===============================
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Origin Access Control for Aerial Nest MVP
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub CloudFront Distribution for ${DomainName} - MVP
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SSLCert
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        DefaultRootObject: index.html
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        Origins:
+          - DomainName: !GetAtt WebContentS3Bucket.RegionalDomainName
+            Id: S3-Web-Content
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+          - DomainName: !GetAtt DocumentStorageS3Bucket.RegionalDomainName
+            Id: S3-Document-Storage
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+          - DomainName: !Select [2, !Split ["/", !GetAtt ApiLambdaUrl.FunctionUrl]]
+            Id: API-Lambda
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: API-Lambda
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            ViewerProtocolPolicy: https-only
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Caching Disabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # All viewer except Host header
+          - PathPattern: /documents/*
+            TargetOriginId: S3-Document-Storage
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, DELETE]
+            ViewerProtocolPolicy: https-only
+            Compress: false
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Caching Disabled
+            OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf # CORS S3 origin
+        DefaultCacheBehavior:
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          TargetOriginId: S3-Web-Content
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Caching Optimized
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf # CORS S3 origin
+          ViewerProtocolPolicy: redirect-to-https
+
+  # ===============================
+  # LAMBDA FUNCTIONS - Minimal Setup
+  # ===============================
+
+  LambdaLibraryLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleArchitectures:
+        - x86_64
+      CompatibleRuntimes:
+        - nodejs20.x
+        - nodejs18.x
+      Content:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref ApiModulesLambdaLayerZipS3Key
+      Description: Node modules for Aerial Nest API
+      LayerName: !Sub ${AWS::StackName}-node-modules
+
+  ApiLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-api
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref ApiLambdaCodeZipS3Key
+      Description: API handler for Aerial Nest MVP
+      Handler: index.lambdaHandler
+      MemorySize: 256  # Start small for MVP
+      Role: !GetAtt ApiLambdaRole.Arn
+      Runtime: nodejs20.x
+      Timeout: 30
+      Layers:
+        - !Ref LambdaLibraryLayer
+      Environment:
+        Variables:
+          NODE_ENV: development
+          DATABASE_URL: !Sub 
+            - 'postgresql://${Username}:${Password}@${Endpoint}:5432/${DatabaseName}?sslmode=require'
+            - Username: !Ref DatabaseMasterUsername
+              Password: !Sub '{{resolve:secretsmanager:${DatabasePasswordSecret}:SecretString:password}}'
+              Endpoint: !GetAtt DatabaseInstance.Endpoint.Address
+              DatabaseName: !Ref DatabaseName
+          JWT_SECRET: !Sub '{{resolve:secretsmanager:${JWTSecret}:SecretString}}'
+          DOCUMENT_BUCKET: !Ref DocumentStorageS3Bucket
+          WEB_CONTENT_BUCKET: !Ref WebContentS3Bucket
+          CLOUDFRONT_DOMAIN: !GetAtt CloudFrontDistribution.DomainName
+          API_DOMAIN: !Ref DomainName
+
+  ApiLambdaUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ApiLambdaFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowMethods: ['*']
+        AllowOrigins: 
+          - !Sub 'https://${DomainName}'
+          - 'http://localhost:3000'
+          - 'http://localhost:5173'  # Vite dev server
+        AllowHeaders: ['*']
+        MaxAge: 300
+
+  ApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiLambdaFunction
+      Action: lambda:InvokeFunctionUrl
+      FunctionUrlAuthType: NONE
+      Principal: '*'
+
+  # ===============================
+  # IAM ROLES - Minimal Permissions
+  # ===============================
+
+  ApiLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-lambda-role
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref DatabasePasswordSecret
+                  - !Ref JWTSecret
+        - PolicyName: S3DocumentAccess
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub ${DocumentStorageS3Bucket}/*
+                  - !Sub ${WebContentS3Bucket}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentStorageS3Bucket.Arn
+                  - !GetAtt WebContentS3Bucket.Arn
+
+  # ===============================
+  # S3 BUCKET POLICIES
+  # ===============================
+
+  WebContentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebContentS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - s3:GetObject
+            Resource: !Sub ${WebContentS3Bucket}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  DocumentStorageBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentStorageS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub ${DocumentStorageS3Bucket}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+# ===============================
+# OUTPUTS
+# ===============================
+
+Outputs:
+  WebsiteURL:
+    Description: Aerial Nest MVP website URL
+    Value: !Sub https://${DomainName}
+
+  ApiEndpoint:
+    Description: API endpoint URL for development
+    Value: !GetAtt ApiLambdaUrl.FunctionUrl
+
+  DatabaseEndpoint:
+    Description: PostgreSQL database endpoint
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
+
+  DatabasePort:
+    Description: PostgreSQL database port
+    Value: !GetAtt DatabaseInstance.Endpoint.Port
+
+  DatabaseName:
+    Description: PostgreSQL database name
+    Value: !Ref DatabaseName
+
+  DocumentStorageBucket:
+    Description: S3 bucket for document storage
+    Value: !Ref DocumentStorageS3Bucket
+
+  WebContentBucket:
+    Description: S3 bucket for web content
+    Value: !Ref WebContentS3Bucket
+
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID for cache invalidation
+    Value: !Ref CloudFrontDistribution
+
+  # Useful for local development
+  DatabaseConnectionString:
+    Description: Database connection string template (replace password)
+    Value: !Sub 
+      - 'postgresql://${Username}:PASSWORD_HERE@${Endpoint}:5432/${DatabaseName}?sslmode=require'
+      - Username: !Ref DatabaseMasterUsername
+        Endpoint: !GetAtt DatabaseInstance.Endpoint.Address
+        DatabaseName: !Ref DatabaseName
+
