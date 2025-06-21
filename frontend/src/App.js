@@ -1,53 +1,5 @@
 import React, { useState, useContext, createContext, useEffect } from 'react';
 
-// ==================== TYPES ====================
-interface User {
-  id: number;
-  email: string;
-  full_name: string;
-  phone?: string;
-  created_at: string;
-}
-
-interface Document {
-  id: number;
-  title: string;
-  document_type: string;
-  category_name: string;
-  category_id: number;
-  file_path: string;
-  file_size: number;
-  upload_date: string;
-  last_accessed?: string;
-  version: number;
-  is_active: boolean;
-}
-
-interface Category {
-  id: number;
-  name: string;
-  description: string;
-  icon: string;
-}
-
-interface TrustedContact {
-  id: number;
-  contact_name: string;
-  contact_email: string;
-  contact_phone?: string;
-  relationship: string;
-  is_emergency_contact: boolean;
-}
-
-interface AuthState {
-  user: User | null;
-  token: string | null;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
-}
-
 // ==================== STYLES ====================
 const styles = {
   // Colors based on Aerial Nest theme
@@ -78,13 +30,11 @@ const styles = {
 const API_BASE_URL = 'http://localhost:3001';
 
 class ApiClient {
-  private token: string | null = null;
-
   constructor() {
     this.token = localStorage.getItem('authToken');
   }
 
-  setToken(token: string | null) {
+  setToken(token) {
     this.token = token;
     if (token) {
       localStorage.setItem('authToken', token);
@@ -93,8 +43,8 @@ class ApiClient {
     }
   }
 
-  private async request(path: string, options: RequestInit = {}) {
-    const headers: HeadersInit = {
+  async request(path, options = {}) {
+    const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
@@ -103,7 +53,11 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    // Ensure clean URL construction
+    const url = `${API_BASE_URL}${path}`;
+    console.log('Making request to:', url); // Debug log
+
+    const response = await fetch(url, {
       ...options,
       headers,
     });
@@ -111,6 +65,7 @@ class ApiClient {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error('API Error:', data); // Debug log
       throw new Error(data.error || 'API request failed');
     }
 
@@ -118,17 +73,22 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async login(email: string, password: string) {
+  async login(email, password) {
     return this.request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
   }
 
-  async register(email: string, password: string, fullName: string) {
+  async register(email, password, firstName, LastName) {
     return this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, fullName }),
+      body: JSON.stringify({ 
+        email, 
+        password, 
+        firstName,
+	lastName
+      }),
     });
   }
 
@@ -153,7 +113,7 @@ class ApiClient {
 const apiClient = new ApiClient();
 
 // ==================== AUTH CONTEXT ====================
-const AuthContext = createContext<AuthState | null>(null);
+const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -161,9 +121,9 @@ export const useAuth = () => {
   return context;
 };
 
-const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('authToken'));
+const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('authToken'));
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -181,15 +141,15 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     }
   }, [token]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email, password) => {
     const response = await apiClient.login(email, password);
     setToken(response.token);
     setUser(response.user);
     apiClient.setToken(response.token);
   };
 
-  const register = async (email: string, password: string, fullName: string) => {
-    const response = await apiClient.register(email, password, fullName);
+  const register = async (email, password, firstName, lastName) => {
+    const response = await apiClient.register(email, password, firstName,lastName);
     setToken(response.token);
     setUser(response.user);
     apiClient.setToken(response.token);
@@ -211,16 +171,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 // ==================== COMPONENTS ====================
 
 // Button Component
-interface ButtonProps {
-  variant?: 'primary' | 'secondary' | 'tertiary';
-  size?: 'small' | 'medium' | 'large';
-  onClick?: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-  fullWidth?: boolean;
-}
-
-const Button: React.FC<ButtonProps> = ({ 
+const Button = ({ 
   variant = 'primary', 
   size = 'medium', 
   onClick, 
@@ -228,7 +179,7 @@ const Button: React.FC<ButtonProps> = ({
   children,
   fullWidth = false 
 }) => {
-  const baseStyle: React.CSSProperties = {
+  const baseStyle = {
     fontFamily: styles.fonts.nunito,
     fontWeight: 500,
     borderRadius: '28px',
@@ -281,8 +232,8 @@ const Button: React.FC<ButtonProps> = ({
 };
 
 // Card Component
-const Card: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style }) => {
-  const cardStyle: React.CSSProperties = {
+const Card = ({ children, style }) => {
+  const cardStyle = {
     backgroundColor: styles.colors.pureWhite,
     borderRadius: '16px',
     padding: '24px',
@@ -295,7 +246,7 @@ const Card: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }>
 };
 
 // Loading Spinner
-const LoadingSpinner: React.FC = () => (
+const LoadingSpinner = () => (
   <div style={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
     <div style={{
       width: '48px',
@@ -309,7 +260,7 @@ const LoadingSpinner: React.FC = () => (
 );
 
 // Error Message
-const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
+const ErrorMessage = ({ message }) => (
   <div style={{
     backgroundColor: `${styles.colors.warmEarth}20`,
     border: `2px solid ${styles.colors.warmEarth}`,
@@ -326,27 +277,28 @@ const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
 // ==================== AUTH COMPONENTS ====================
 
 // Login Form
-const LoginForm: React.FC<{ onSwitchToRegister: () => void }> = ({ onSwitchToRegister }) => {
+const LoginForm = ({ onSwitchToRegister }) => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
       await login(email, password);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle = {
     width: '100%',
     padding: '12px 16px',
     fontSize: '18px',
@@ -356,7 +308,7 @@ const LoginForm: React.FC<{ onSwitchToRegister: () => void }> = ({ onSwitchToReg
     marginTop: '8px'
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle = {
     display: 'block',
     color: styles.colors.deepForest,
     fontSize: '18px',
@@ -376,38 +328,42 @@ const LoginForm: React.FC<{ onSwitchToRegister: () => void }> = ({ onSwitchToReg
         Welcome Back
       </h2>
       
-      <div style={{ marginBottom: '24px' }}>
-        <label style={labelStyle}>Email Address</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
-          placeholder="your@email.com"
-        />
-      </div>
-      
-      <div style={{ marginBottom: '24px' }}>
-        <label style={labelStyle}>Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-          placeholder="••••••••"
-        />
-      </div>
-      
-      {error && <ErrorMessage message={error} />}
-      
-      <Button 
-        onClick={handleSubmit} 
-        size="large" 
-        fullWidth 
-        disabled={isLoading || !email || !password}
-      >
-        {isLoading ? 'Signing in...' : 'Sign In'}
-      </Button>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '24px' }}>
+          <label style={labelStyle}>Email Address</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={inputStyle}
+            placeholder="your@email.com"
+            required
+          />
+        </div>
+        
+        <div style={{ marginBottom: '24px' }}>
+          <label style={labelStyle}>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={inputStyle}
+            placeholder="••••••••"
+            required
+          />
+        </div>
+        
+        {error && <ErrorMessage message={error} />}
+        
+        <Button 
+          type="submit"
+          size="large" 
+          fullWidth 
+          disabled={isLoading || !email || !password}
+        >
+          {isLoading ? 'Signing in...' : 'Sign In'}
+        </Button>
+      </form>
       
       <div style={{ marginTop: '24px', textAlign: 'center' }}>
         <p style={{ color: styles.colors.sageGrove, fontSize: '18px' }}>
@@ -432,10 +388,11 @@ const LoginForm: React.FC<{ onSwitchToRegister: () => void }> = ({ onSwitchToReg
 };
 
 // Register Form
-const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLogin }) => {
+const RegisterForm = ({ onSwitchToLogin }) => {
   const { register } = useAuth();
   const [formData, setFormData] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: ''
@@ -443,7 +400,8 @@ const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLog
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError('');
 
     if (formData.password !== formData.confirmPassword) {
@@ -458,15 +416,18 @@ const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLog
 
     setIsLoading(true);
     try {
-      await register(formData.email, formData.password, formData.fullName);
-    } catch (err: any) {
+      await register(
+	 formData.email,
+	 formData.password,
+	 formData.firstName,
+	 formData.lastName
+	);
+    } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle = {
     width: '100%',
     padding: '12px 16px',
     fontSize: '18px',
@@ -476,7 +437,7 @@ const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLog
     marginTop: '8px'
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle = {
     display: 'block',
     color: styles.colors.deepForest,
     fontSize: '18px',
@@ -496,63 +457,82 @@ const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLog
         Create Your Nest
       </h2>
       
-      <div style={{ marginBottom: '20px' }}>
-        <label style={labelStyle}>Full Name</label>
-        <input
-          type="text"
-          value={formData.fullName}
-          onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-          style={inputStyle}
-          placeholder="John Doe"
-        />
-      </div>
-      
-      <div style={{ marginBottom: '20px' }}>
-        <label style={labelStyle}>Email Address</label>
-        <input
-          type="email"
-          value={formData.email}
-          onChange={(e) => setFormData({...formData, email: e.target.value})}
-          style={inputStyle}
-          placeholder="your@email.com"
-        />
-      </div>
-      
-      <div style={{ marginBottom: '20px' }}>
-        <label style={labelStyle}>Password</label>
-        <input
-          type="password"
-          value={formData.password}
-          onChange={(e) => setFormData({...formData, password: e.target.value})}
-          style={inputStyle}
-          placeholder="••••••••"
-        />
-        <p style={{ color: styles.colors.sageGrove, fontSize: '14px', marginTop: '4px' }}>
-          At least 8 characters
-        </p>
-      </div>
-      
-      <div style={{ marginBottom: '24px' }}>
-        <label style={labelStyle}>Confirm Password</label>
-        <input
-          type="password"
-          value={formData.confirmPassword}
-          onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-          style={inputStyle}
-          placeholder="••••••••"
-        />
-      </div>
-      
-      {error && <ErrorMessage message={error} />}
-      
-      <Button 
-        onClick={handleSubmit} 
-        size="large" 
-        fullWidth 
-        disabled={isLoading || !formData.email || !formData.password || !formData.fullName}
-      >
-        {isLoading ? 'Creating Account...' : 'Create Account'}
-      </Button>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '20px' }}>
+	   <label style={labelStyle}>First Name</label>
+           <input
+             type="text"
+             value={formData.firstName}
+             onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+             style={inputStyle}
+             placeholder="John"
+             required
+          />
+         </div>
+ 
+         <div style={{ marginBottom: '20px' }}>
+           <label style={labelStyle}>Last Name</label>
+           <input
+             type="text"
+             value={formData.lastName}
+             onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+             style={inputStyle}
+             placeholder="Doe"
+             required
+           />
+         </div>
+        
+        <div style={{ marginBottom: '20px' }}>
+          <label style={labelStyle}>Email Address</label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({...formData, email: e.target.value})}
+            style={inputStyle}
+            placeholder="your@email.com"
+            required
+          />
+        </div>
+        
+        <div style={{ marginBottom: '20px' }}>
+          <label style={labelStyle}>Password</label>
+          <input
+            type="password"
+            value={formData.password}
+            onChange={(e) => setFormData({...formData, password: e.target.value})}
+            style={inputStyle}
+            placeholder="••••••••"
+            required
+          />
+          <p style={{ color: styles.colors.sageGrove, fontSize: '14px', marginTop: '4px' }}>
+            At least 8 characters
+          </p>
+        </div>
+        
+        <div style={{ marginBottom: '24px' }}>
+          <label style={labelStyle}>Confirm Password</label>
+          <input
+            type="password"
+            value={formData.confirmPassword}
+            onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+            style={inputStyle}
+            placeholder="••••••••"
+            required
+          />
+        </div>
+        
+        {error && <ErrorMessage message={error} />}
+        
+        <Button 
+          type="submit"
+          size="large" 
+          fullWidth 
+          disabled={isLoading || !formData.email || !formData.password || !formData.firstName || !formData.lastName
+         }
+        >
+          {isLoading ? 'Creating Account...' : 'Create Account'}
+        </Button>
+      </form>
       
       <div style={{ marginTop: '24px', textAlign: 'center' }}>
         <p style={{ color: styles.colors.sageGrove, fontSize: '18px' }}>
@@ -579,14 +559,14 @@ const RegisterForm: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLog
 // ==================== DOCUMENT COMPONENTS ====================
 
 // Document Card
-const DocumentCard: React.FC<{ document: Document }> = ({ document }) => {
-  const formatFileSize = (bytes: number) => {
+const DocumentCard = ({ document }) => {
+  const formatFileSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       year: 'numeric', 
@@ -595,8 +575,8 @@ const DocumentCard: React.FC<{ document: Document }> = ({ document }) => {
     });
   };
 
-  const getCategoryColor = (categoryName: string) => {
-    const colorMap: { [key: string]: string } = {
+  const getCategoryColor = (categoryName) => {
+    const colorMap = {
       'Will': styles.colors.deepForest,
       'Healthcare Directive': styles.colors.calmWaters,
       'Power of Attorney': styles.colors.riverStone,
@@ -658,12 +638,12 @@ const DocumentCard: React.FC<{ document: Document }> = ({ document }) => {
 };
 
 // Document Library
-const DocumentLibrary: React.FC = () => {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+const DocumentLibrary = () => {
+  const [documents, setDocuments] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -674,7 +654,7 @@ const DocumentLibrary: React.FC = () => {
         ]);
         setDocuments(docsResponse.documents || []);
         setCategories(catsResponse.categories || []);
-      } catch (err: any) {
+      } catch (err) {
         setError(err.message || 'Failed to load documents');
       } finally {
         setIsLoading(false);
@@ -691,7 +671,7 @@ const DocumentLibrary: React.FC = () => {
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
 
-  const categoryButtonStyle = (isActive: boolean): React.CSSProperties => ({
+  const categoryButtonStyle = (isActive) => ({
     padding: '8px 16px',
     borderRadius: '20px',
     fontSize: '18px',
@@ -772,7 +752,7 @@ const DocumentLibrary: React.FC = () => {
 // ==================== DASHBOARD COMPONENTS ====================
 
 // Dashboard
-const Dashboard: React.FC = () => {
+const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({
     totalDocuments: 0,
@@ -794,7 +774,7 @@ const Dashboard: React.FC = () => {
         
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const recentDocs = docs.filter((doc: Document) => 
+        const recentDocs = docs.filter(doc => 
           new Date(doc.upload_date) > thirtyDaysAgo
         );
 
@@ -923,10 +903,90 @@ const Dashboard: React.FC = () => {
   );
 };
 
+// ==================== NAVIGATION ====================
+
+const Navigation = ({ currentView, setCurrentView }) => {
+  const { user, logout } = useAuth();
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+    { id: 'documents', label: 'Documents', icon: '📄' },
+    { id: 'planning', label: 'Planning', icon: '📋' },
+    { id: 'contacts', label: 'Contacts', icon: '👥' },
+  ];
+
+  const navButtonStyle = (isActive) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    borderRadius: '20px',
+    fontSize: '18px',
+    fontFamily: styles.fonts.nunito,
+    border: 'none',
+    cursor: 'pointer',
+    backgroundColor: isActive ? styles.colors.morningLight : 'transparent',
+    color: isActive ? styles.colors.deepForest : styles.colors.sageGrove,
+    transition: 'all 0.3s ease'
+  });
+
+  return (
+    <nav style={{
+      backgroundColor: styles.colors.pureWhite,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      borderBottom: `1px solid ${styles.colors.gentleBreeze}`
+    }}>
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '0 16px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        height: '80px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+          <h1 style={{
+            fontSize: '28px',
+            fontFamily: styles.fonts.crimson,
+            color: styles.colors.ancientPine
+          }}>
+            Aerial Nest
+          </h1>
+          <div style={{ display: 'flex', gap: '16px' }}>
+            {navItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setCurrentView(item.id)}
+                style={navButtonStyle(currentView === item.id)}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{
+            fontSize: '18px',
+            color: styles.colors.sageGrove,
+            fontFamily: styles.fonts.nunito
+          }}>
+            {user?.email}
+          </span>
+          <Button variant="tertiary" size="small" onClick={logout}>
+            Sign Out
+          </Button>
+        </div>
+      </div>
+    </nav>
+  );
+};
+
 // ==================== MAIN APP ====================
 
-const App: React.FC = () => {
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+const App = () => {
+  const [authMode, setAuthMode] = useState('login');
   const [currentView, setCurrentView] = useState('dashboard');
 
   return (
@@ -965,12 +1025,7 @@ const App: React.FC = () => {
   );
 };
 
-const AppContent: React.FC<{
-  authMode: 'login' | 'register';
-  setAuthMode: (mode: 'login' | 'register') => void;
-  currentView: string;
-  setCurrentView: (view: string) => void;
-}> = ({ authMode, setAuthMode, currentView, setCurrentView }) => {
+const AppContent = ({ authMode, setAuthMode, currentView, setCurrentView }) => {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -1066,88 +1121,6 @@ const AppContent: React.FC<{
         )}
       </main>
     </div>
-  );
-};
-
-// Navigation Component
-const Navigation: React.FC<{
-  currentView: string;
-  setCurrentView: (view: string) => void;
-}> = ({ currentView, setCurrentView }) => {
-  const { user, logout } = useAuth();
-
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
-    { id: 'documents', label: 'Documents', icon: '📄' },
-    { id: 'planning', label: 'Planning', icon: '📋' },
-    { id: 'contacts', label: 'Contacts', icon: '👥' },
-  ];
-
-  const navButtonStyle = (isActive: boolean): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 16px',
-    borderRadius: '20px',
-    fontSize: '18px',
-    fontFamily: styles.fonts.nunito,
-    border: 'none',
-    cursor: 'pointer',
-    backgroundColor: isActive ? styles.colors.morningLight : 'transparent',
-    color: isActive ? styles.colors.deepForest : styles.colors.sageGrove,
-    transition: 'all 0.3s ease'
-  });
-
-  return (
-    <nav style={{
-      backgroundColor: styles.colors.pureWhite,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-      borderBottom: `1px solid ${styles.colors.gentleBreeze}`
-    }}>
-      <div style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        padding: '0 16px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        height: '80px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-          <h1 style={{
-            fontSize: '28px',
-            fontFamily: styles.fonts.crimson,
-            color: styles.colors.ancientPine
-          }}>
-            Aerial Nest
-          </h1>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            {navItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setCurrentView(item.id)}
-                style={navButtonStyle(currentView === item.id)}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{
-            fontSize: '18px',
-            color: styles.colors.sageGrove,
-            fontFamily: styles.fonts.nunito
-          }}>
-            {user?.email}
-          </span>
-          <Button variant="tertiary" size="small" onClick={logout}>
-            Sign Out
-          </Button>
-        </div>
-      </div>
-    </nav>
   );
 };
 
